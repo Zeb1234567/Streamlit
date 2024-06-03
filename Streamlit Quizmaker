@@ -1,0 +1,68 @@
+import chainlit as cl
+from chainlit import run_sync
+from crewai import Agent, Task, Crew
+from langchain.agents import tool
+#from langchain_community.tools import DuckDuckGoSearchRun
+# from langchain_community.chat_models import ChatOllama
+# from langchain_community.llms import Ollama
+from dotenv import load_dotenv
+
+load_dotenv()
+import os
+
+# pls ignore these I need to remember them
+#search_tool = DuckDuckGoSearchRun()
+
+# load ollama model
+# llm_model = Ollama(model="llama2:7b-chat")
+
+@tool("Answer Questions")
+def ask_human(question: str) -> str:
+    """Answer Questions"""
+    human_response  = run_sync( cl.AskUserMessage(content=f"{question}").send())
+    if human_response:
+        return human_response["output"]
+
+@cl.on_chat_start
+async def on_chat_start():
+    extractor = Agent(
+        role='Quizmaker',
+        goal='Provide users with quizzes about a topic that the user will provide',
+        backstory="""You work as a quiz maker for a university.
+        You excel at providing quizzes for teachers or professors to use for their classes. When a user asks for a quiz you will provide
+        them a numbered quiz that can be multiple choice, identification, true or false, or all these 3 combined. The number of items and type of quiz will depend
+        on the user so make sure to ask them what kind of quiz they want. You should also ask the user the topic of the quiz that they want.
+        ...
+        
+        .....
+        """,
+        verbose=True,
+        allow_delegation=False,
+        tools=[ask_human]
+    )
+#start by giving initial info then give a question
+
+    # Create tasks for your agents
+    task = Task(
+        description="""Provide quizzes that the user has given you. Ask the user what kind of quiz they want from 3 categories: Identification,
+        Multiple Choice (A TO D), True or false, or mixed. Ask the user how many items are in the quiz. Also ask the user what
+        topic they want for the quiz.""",
+        expected_output="Numbered Quiz form",
+        agent=extractor
+        )
+
+    crew = Crew(
+        agents=[extractor],
+        tasks=[task],
+        verbose=2, # You can set it to 1 or 2 to different logging levels
+    )
+    cl.user_session.set("crew", crew)
+    # Start the crew
+    # crew.kickoff()
+@cl.on_message
+async def main(message: cl.Message):
+    # Extract data from user message
+    crew = cl.user_session.get("crew")
+    result = crew.kickoff()
+    print(result)
+    await cl.Message(result).send()
